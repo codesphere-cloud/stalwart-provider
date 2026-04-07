@@ -15,17 +15,17 @@ backend:
     authTokenEnv: BACKEND_AUTH_TOKEN
 
 plans:
-  - id: starter
+  - id: 0
     displayName: Starter
     description: Basic mailbox with 500 MB storage
     parameters:
       QUOTA_MB: 500
-  - id: standard
+  - id: 1
     displayName: Standard
     description: Standard mailbox with 2 GB storage
     parameters:
       QUOTA_MB: 2000
-  - id: premium
+  - id: 2
     displayName: Premium
     description: Premium mailbox with 10 GB storage
     parameters:
