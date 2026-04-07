@@ -1,7 +1,7 @@
 {
-  "name": "example-rest-backend",
+  "name": "stalwart-rest-backend",
   "version": "1.0.0",
-  "description": "Example REST backend implementing the Codesphere Managed Service Adapter API",
+  "description": "REST backend for Stalwart mailbox provisioning via Codesphere Managed Service Adapter API",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

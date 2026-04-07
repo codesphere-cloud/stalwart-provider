@@ -1,0 +1,21 @@
+# Local development stack: Stalwart Mail Server + REST Backend
+# Usage: docker compose -f docker-compose.local.yml up -d
+
+services:
+  stalwart:
+    image: stalwartlabs/mail-server:v0.11
+    container_name: stalwart-mail
+    restart: unless-stopped
+    ports:
+      - "1443:443"     # HTTPS (admin UI + JMAP + webmail)
+      - "1025:25"      # SMTP
+      - "1587:587"     # SMTP submission
+      - "1993:993"     # IMAPS
+      - "8443:8080"    # HTTP
+    volumes:
+      - stalwart-data:/opt/stalwart-mail
+    environment:
+      - STALWART_ADMIN_PASSWORD=localdev123
+
+volumes:
+  stalwart-data:

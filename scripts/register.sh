@@ -44,11 +44,19 @@ else
   exit 1
 fi
 
+# ── Determine Git URL (required for all backend types) ─────────────
+if [[ -z "${GIT_URL:-}" ]]; then
+  GIT_URL=$(git remote get-url origin 2>/dev/null || true)
+  if [[ -z "$GIT_URL" ]]; then
+    echo "ERROR: Could not determine Git URL. Set a git remote or use a landscape backend."
+    exit 1
+  fi
+fi
+
 echo "Provider:  $PROVIDER_NAME $PROVIDER_VERSION"
 echo "Backend:   $BACKEND_TYPE"
-if [[ "$BACKEND_TYPE" == "landscape" ]]; then
-  echo "Git URL:   $GIT_URL"
-else
+echo "Git URL:   $GIT_URL"
+if [[ "$BACKEND_TYPE" == "rest" ]]; then
   echo "REST URL:  $REST_URL"
 fi
 echo "API:       $API_ENDPOINT"
@@ -66,32 +74,12 @@ echo ""
 # ── Register provider ──────────────────────────────────────────────
 echo "Registering provider..."
 
-if [[ "$BACKEND_TYPE" == "landscape" ]]; then
-  # Landscape backend — register using git URL
-  RESPONSE=$(curl -s -w "\n%{http_code}" \
-    -X POST "$API_ENDPOINT" \
-    -H "Authorization: Bearer $CODESPHERE_API_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d '{"gitUrl": "'"$GIT_URL"'", "scope": '"$SCOPE_JSON"'}')
-else
-  # REST backend — register with full provider spec
-  PROVIDER_JSON=$(yq eval -o=json '.' "$PROVIDER_CONFIG")
-  PAYLOAD=$(echo "$PROVIDER_JSON" | python3 -c "
-import sys, json
-provider = json.load(sys.stdin)
-payload = {
-    'provider': provider,
-    'scope': $SCOPE_JSON
-}
-json.dump(payload, sys.stdout)
-")
-
-  RESPONSE=$(curl -s -w "\n%{http_code}" \
-    -X POST "$API_ENDPOINT" \
-    -H "Authorization: Bearer $CODESPHERE_API_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "$PAYLOAD")
-fi
+# ── Register provider (always via gitUrl) ──────────────────────────
+RESPONSE=$(curl -s -w "\n%{http_code}" \
+  -X POST "$API_ENDPOINT" \
+  -H "Authorization: Bearer $CODESPHERE_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"gitUrl": "'"$GIT_URL"'", "scope": '"$SCOPE_JSON"'}')
 
 HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
 BODY=$(echo "$RESPONSE" | sed '$d')
