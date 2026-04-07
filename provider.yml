@@ -14,6 +14,23 @@ backend:
     url: http://localhost:9090
     authTokenEnv: BACKEND_AUTH_TOKEN
 
+plans:
+  - id: starter
+    displayName: Starter
+    description: Basic mailbox with 500 MB storage
+    parameters:
+      QUOTA_MB: 500
+  - id: standard
+    displayName: Standard
+    description: Standard mailbox with 2 GB storage
+    parameters:
+      QUOTA_MB: 2000
+  - id: premium
+    displayName: Premium
+    description: Premium mailbox with 10 GB storage
+    parameters:
+      QUOTA_MB: 10000
+
 configSchema:
   type: object
   properties:
