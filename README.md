@@ -1,16 +1,30 @@
-# Codesphere Landscape Provider Template
+# Codesphere Managed Service Provider Template
 
-A template repository for creating **managed service providers** on the Codesphere platform. Clone this repo, describe what service you want to offer, and let the AI agent scaffold the entire provider for you — then register it with a single `make` command.
+A template repository for creating **managed service providers** on the Codesphere platform. Supports both **landscape-based** and **REST backend** providers. Clone this repo, describe what service you want to offer, and let the AI agent scaffold the entire provider for you — then register it with a single `make` command.
 
 ---
 
-## What Is a Landscape Provider?
+## What Is a Service Provider?
 
-A **landscape-based service provider** transforms a Codesphere landscape into a reusable blueprint that others can instantiate as managed services. Each provider defines:
+A **service provider** defines a reusable blueprint that others can instantiate as managed services on the Codesphere platform. Providers can be backed by one of two types:
+
+### Landscape-based Providers
+
+Transforms a Codesphere landscape into a reusable blueprint. Codesphere handles provisioning internally through the landscape's CI pipeline.
 
 - **Metadata** — name, version, display name, category, description, icon
 - **Backend** — Git repository URL and CI profile reference
-- **Configuration schemas** — what users can configure (`configSchema`), what secrets they must provide (`secretsSchema`), and what runtime details are exposed (`detailsSchema`)
+- **CI Pipeline** — `ci.yml` defining prepare, build, and run stages
+- **Configuration schemas** — `configSchema`, `secretsSchema`, `detailsSchema`
+
+### REST Backend Providers
+
+Connects to a custom REST API that handles provisioning and lifecycle management externally. Your backend implements the Codesphere Managed Service Adapter API (POST, GET, PATCH, DELETE).
+
+- **Metadata** — name, version, display name, category, description, icon
+- **Backend** — REST endpoint URL and authentication
+- **Configuration schemas** — `configSchema`, `secretsSchema`, `detailsSchema`, `planSchema`
+- **No `ci.yml` needed** — the REST backend handles all provisioning
 
 When registered, your provider appears in the Codesphere Marketplace and can be deployed by any team with access.
 
@@ -41,13 +55,18 @@ cd my-provider
 
 Open the project in VS Code with GitHub Copilot enabled, then prompt:
 
-> "I want to create a landscape provider for **PostgreSQL 16** with automated backups and a health check endpoint."
+> "I want to create a **landscape provider** for PostgreSQL 16 with automated backups and a health check endpoint."
+
+Or for a REST backend:
+
+> "I want to create a **REST backend provider** for a custom database service with provisioning via my existing API."
 
 The agent will:
 - Read the instructions in `.github/copilot-instructions.md`
-- Follow the detailed schema in `.github/instructions/PROVIDER.instructions.md` and `.github/instructions/CI.instructions.md`
-- Generate `config/provider.yml` and `config/ci.yml` from the examples
-- Scaffold any required source code in `src/`
+- Follow the detailed schema in `.github/instructions/PROVIDER.instructions.md`
+- For landscape providers: generate `config/ci.yml` using `.github/instructions/CI.instructions.md`
+- For REST providers: scaffold the backend in `src/rest-backend/`
+- Generate `config/provider.yml` from the appropriate example
 
 ### 3. Validate locally
 
@@ -89,8 +108,9 @@ ms-landscape-template/
 │       └── CI.instructions.md             # CI pipeline schema & rules
 │
 ├── config/
-│   ├── provider.yml.example               # Example provider definition
-│   └── ci.yml.example                     # Example CI pipeline config
+│   ├── provider.yml.example               # Example landscape-based provider
+│   ├── provider.rest.yml.example          # Example REST backend provider
+│   └── ci.yml.example                     # Example CI pipeline config (landscape only)
 │
 ├── scripts/
 │   ├── validate.sh                        # Validate config files locally
@@ -98,7 +118,11 @@ ms-landscape-template/
 │   └── test-provider.sh                   # Smoke-test a deployed provider
 │
 └── src/                                   # Provider source code (agent-generated)
-    └── .gitkeep
+    ├── .gitkeep
+    └── rest-backend/                      # Example REST backend implementation
+        ├── README.md
+        ├── package.json
+        └── server.js
 ```
 
 ### Key Files
@@ -106,18 +130,20 @@ ms-landscape-template/
 | File | Purpose |
 |------|---------|
 | `config/provider.yml` | Provider definition: metadata, backend, config/secrets/details schemas |
-| `config/ci.yml` | CI pipeline: prepare, test, and run stages for the landscape |
+| `config/ci.yml` | CI pipeline: prepare and run stages for the landscape (landscape providers only) |
+| `config/provider.rest.yml.example` | Example REST backend provider definition |
+| `src/rest-backend/` | Example REST backend implementing the Managed Service Adapter API |
 | `.github/copilot-instructions.md` | Tells the AI agent *what this project is* and *how to work in it* |
-| `.github/instructions/PROVIDER.instructions.md` | Detailed schema reference for `provider.yml` |
-| `.github/instructions/CI.instructions.md` | Detailed schema reference for `ci.yml` |
+| `.github/instructions/PROVIDER.instructions.md` | Detailed schema reference for `provider.yml` (both types) |
+| `.github/instructions/CI.instructions.md` | Detailed schema reference for `ci.yml` (landscape only) |
 
 ---
 
 ## Configuration Reference
 
-### provider.yml
+### provider.yml (Landscape Backend)
 
-The provider definition file. Describes your managed service metadata and configuration schemas:
+The provider definition file for landscape-based providers:
 
 ```yaml
 name: mattermost                # Unique name (lowercase, hyphens, underscores)
@@ -166,7 +192,72 @@ detailsSchema:                  # Runtime details exposed after provisioning
 - Use `x-update-constraint: increase-only` or `immutable` to restrict post-creation updates
 - Use `x-endpoint` in detailsSchema to fetch live data from the running service
 
-### ci.yml
+### provider.yml (REST Backend)
+
+The provider definition file for REST backend providers:
+
+```yaml
+name: custom-postgres           # Unique name (lowercase, hyphens, underscores)
+version: v1                     # Version: v1, v2, etc. (NOT semver)
+author: Your Team
+displayName: Custom PostgreSQL
+category: databases
+description: |
+  Custom PostgreSQL provider backed by an external REST API.
+
+backend:
+  rest:
+    url: https://my-backend.example.com/postgres
+    authTokenEnv: BACKEND_AUTH_TOKEN  # Env var name (not the token!)
+
+configSchema:                   # User-configurable options
+  type: object
+  properties:
+    DATABASE_NAME:
+      type: string
+      description: Name of the database to create
+    VERSION:
+      type: string
+      description: PostgreSQL version
+      enum: ['16.10', '15.14']
+      x-update-constraint: immutable
+
+secretsSchema:                  # Secrets sent to the REST backend
+  type: object
+  properties:
+    SUPERUSER_PASSWORD:
+      type: string
+      format: password
+
+detailsSchema:                  # Runtime details returned by the backend
+  type: object
+  properties:
+    hostname:
+      type: string
+    port:
+      type: integer
+    ready:
+      type: boolean
+
+planSchema:                     # Resource plan parameters
+  type: object
+  properties:
+    storage:
+      type: integer
+      description: Storage size in MB
+      x-update-constraint: increase-only
+    cpu:
+      type: integer
+      description: CPU allocation in tenths
+```
+
+**Key concepts:**
+- No `ci.yml` is needed — the REST backend handles provisioning
+- `planSchema` defines resource parameters sent in `plan.parameters` to the backend
+- The REST backend must implement: `POST /`, `GET /?id=...`, `PATCH /{id}`, `DELETE /{id}`
+- Auth token is referenced by env var name, never hardcoded
+
+### ci.yml (Landscape Providers Only)
 
 The CI pipeline definition. Defines how to prepare the environment and orchestrate landscape services:
 
@@ -216,7 +307,7 @@ run:                              # Landscape services — run in parallel
 
 | Command | Description |
 |---------|-------------|
-| `make validate` | Validate `provider.yml` and `ci.yml` syntax and schema |
+| `make validate` | Validate `provider.yml` (and `ci.yml` for landscape providers) |
 | `make register` | Register the provider with Codesphere (requires `CODESPHERE_API_TOKEN`) |
 | `make test` | Deploy a test instance and run smoke tests |
 | `make clean` | Remove generated files |
@@ -230,21 +321,27 @@ run:                              # Landscape services — run in parallel
 
 This template is designed to be **agent-first**. The recommended workflow:
 
-1. **Describe your service** — Tell the agent what managed service you want to create
-2. **Review generated configs** — The agent creates `provider.yml` and `ci.yml`
-3. **Add custom logic** — If your service needs setup scripts or custom health checks, add them to `src/`
+1. **Describe your service** — Tell the agent what managed service you want to create, and whether it should be landscape-based or REST backend
+2. **Review generated configs** — The agent creates `provider.yml` (and `ci.yml` for landscape providers)
+3. **Add custom logic** — For landscape: setup scripts in `src/`. For REST: implement your backend in `src/rest-backend/`
 4. **Validate** — Run `make validate` to catch issues
 5. **Register** — Run `make register` to publish to Codesphere
 6. **Test** — Run `make test` to verify end-to-end
 
-### Manual Workflow
-
-If you prefer to work without the agent:
+### Manual Workflow — Landscape Provider
 
 1. Copy `config/provider.yml.example` → `config/provider.yml`
 2. Copy `config/ci.yml.example` → `config/ci.yml`
-3. Edit both files following the schema in `.github/instructions/PROVIDER.instructions.md`
+3. Edit both files following `.github/instructions/PROVIDER.instructions.md` and `.github/instructions/CI.instructions.md`
 4. Add any source code to `src/`
+5. Run `make validate && make register`
+
+### Manual Workflow — REST Backend Provider
+
+1. Copy `config/provider.rest.yml.example` → `config/provider.yml`
+2. Edit the file following `.github/instructions/PROVIDER.instructions.md`
+3. Implement or customize the REST backend in `src/rest-backend/` (see the example)
+4. Deploy the backend and update `backend.rest.url` in `provider.yml`
 5. Run `make validate && make register`
 
 ---

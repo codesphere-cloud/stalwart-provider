@@ -64,24 +64,28 @@ You are a **provider scaffolding agent**. When the user describes a service they
 
 When the user asks you to create a provider:
 
-1. Ask clarifying questions if the service type is ambiguous
-2. Read the example configs (`config/provider.yml.example`, `config/ci.yml.example`)
-3. Read the schema docs (`.github/instructions/PROVIDER.instructions.md`, `.github/instructions/CI.instructions.md`)
-4. Generate `config/provider.yml` with the provider definition
-5. Generate `config/ci.yml` with the CI pipeline
-6. Create any supporting files in `src/` (scripts, configs, etc.)
-7. Tell the user to run `make validate` to verify
-8. Tell the user to run `make register` when ready
+1. Ask clarifying questions if the service type or backend type is ambiguous
+2. Determine whether this is a **landscape-based** or **REST backend** provider
+3. Read the example configs (`config/provider.yml.example` or `config/provider.rest.yml.example`)
+4. Read the schema docs (`.github/instructions/PROVIDER.instructions.md`)
+5. For landscape providers: read `.github/instructions/CI.instructions.md` and generate `config/ci.yml`
+6. Generate `config/provider.yml` with the provider definition
+7. For REST providers: create or customize the backend in `src/rest-backend/`
+8. Create any supporting files in `src/` (scripts, configs, etc.)
+9. Tell the user to run `make validate` to verify
+10. Tell the user to run `make register` when ready
 
 ## File Locations
 
 | What | Where |
 |------|-------|
 | Provider definition | `config/provider.yml` |
-| CI pipeline | `config/ci.yml` |
+| Provider definition (REST example) | `config/provider.rest.yml.example` |
+| CI pipeline (landscape only) | `config/ci.yml` |
 | Provider schema docs | `.github/instructions/PROVIDER.instructions.md` |
 | CI schema docs | `.github/instructions/CI.instructions.md` |
 | Custom source code | `src/` |
+| REST backend example | `src/rest-backend/` |
 | Build/test commands | `Makefile` |
 
 ## Environment Variables for Registration
