@@ -16,14 +16,17 @@ backend:
 
 plans:
   - id: 0
+    name: starter
     displayName: Starter
     description: Basic mailbox with 500 MB storage
     parameters: {}
   - id: 1
+    name: standard
     displayName: Standard
     description: Standard mailbox with 2 GB storage
     parameters: {}
   - id: 2
+    name: premium
     displayName: Premium
     description: Premium mailbox with 10 GB storage
     parameters: {}
