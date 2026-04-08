@@ -6,67 +6,57 @@ By the end, you'll have:
 - A Stalwart Mail Server running locally in Docker
 - A REST backend that creates/updates/deletes mailbox accounts via Stalwart's admin API
 - A `provider.yml` registered with your local Codesphere dev instance
+- Multi-domain support with automatic DNS record retrieval
+- JMAP auto-discovery so consumers can send email programmatically
 
 ---
 
 ## Table of Contents
 
-- [Tutorial: Building a Custom REST Backend Provider for Codesphere](#tutorial-building-a-custom-rest-backend-provider-for-codesphere)
-  - [Table of Contents](#table-of-contents)
-  - [1. Architecture Overview](#1-architecture-overview)
-  - [2. Prerequisites](#2-prerequisites)
-  - [3. Step 1 — Start Stalwart Mail Server](#3-step-1--start-stalwart-mail-server)
-  - [4. Step 2 — Write the provider.yml](#4-step-2--write-the-provideryml)
-    - [Key rules for provider.yml](#key-rules-for-provideryml)
-  - [5. Step 3 — Implement the REST Backend](#5-step-3--implement-the-rest-backend)
-    - [Project setup](#project-setup)
-    - [server.js — The complete implementation](#serverjs--the-complete-implementation)
-      - [Stalwart API quirks you need to know](#stalwart-api-quirks-you-need-to-know)
-    - [Full source](#full-source)
-  - [6. Step 4 — Test Locally](#6-step-4--test-locally)
-    - [Start the backend](#start-the-backend)
-    - [Run the CRUD tests](#run-the-crud-tests)
-  - [7. Step 5 — Register with Codesphere](#7-step-5--register-with-codesphere)
-    - [For Codesphere Private Cloud / Dev Instance](#for-codesphere-private-cloud--dev-instance)
-    - [For landscape-based providers (alternative)](#for-landscape-based-providers-alternative)
-  - [8. Gotchas \& Lessons Learned](#8-gotchas--lessons-learned)
-    - [Stalwart API](#stalwart-api)
-    - [provider.yml](#provideryml)
-    - [Registration](#registration)
-  - [9. Production Deployment](#9-production-deployment)
-    - [What end users receive](#what-end-users-receive)
-  - [Quick Reference — File Layout](#quick-reference--file-layout)
+- [1. Architecture Overview](#1-architecture-overview)
+- [2. Prerequisites](#2-prerequisites)
+- [3. Step 1 — Start Stalwart Mail Server](#3-step-1--start-stalwart-mail-server)
+- [4. Step 2 — Write the provider.yml](#4-step-2--write-the-provideryml)
+- [5. Step 3 — Implement the REST Backend](#5-step-3--implement-the-rest-backend)
+- [6. Step 4 — Test Locally](#6-step-4--test-locally)
+- [7. Step 5 — Register with Codesphere](#7-step-5--register-with-codesphere)
+- [8. Gotchas & Lessons Learned](#8-gotchas--lessons-learned)
+- [9. Production Deployment](#9-production-deployment)
 
 ---
 
 ## 1. Architecture Overview
 
 ```
-┌─────────────────────┐         ┌─────────────────────┐         ┌─────────────────────┐
-│   Codesphere UI     │         │   REST Backend       │         │   Stalwart Mail      │
-│   (marketplace)     │────────▶│   (Node.js/Express)  │────────▶│   Server (Docker)    │
-│                     │  HTTP   │   localhost:9090      │  HTTPS  │   localhost:1443     │
-│  POST / GET /       │         │                      │         │                      │
-│  PATCH / DELETE     │         │  Adapter layer:      │         │  /api/principal      │
-│                     │◀────────│  translates CS API   │◀────────│  create/update/      │
-│  Shows details:     │  JSON   │  → Stalwart API      │  JSON   │  delete users        │
-│  email, IMAP, SMTP  │         │                      │         │                      │
-└─────────────────────┘         └─────────────────────┘         └─────────────────────┘
+┌─────────────────────┐         ┌─────────────────────┐         ┌──────────────────────────┐
+│   Codesphere UI     │         │   REST Backend       │         │   Stalwart Mail Server   │
+│   (marketplace)     │────────▶│   (Node.js/Express)  │────────▶│   (Docker v0.13.2)       │
+│                     │  HTTP   │   localhost:9090      │  HTTP   │   localhost:1080         │
+│  POST / GET /       │         │                      │         │                          │
+│  PATCH / DELETE     │         │  Adapter layer:      │         │  /api/principal (CRUD)   │
+│                     │◀────────│  translates CS API   │◀────────│  /api/dns/records (DNS)  │
+│  Shows details:     │  JSON   │  → Stalwart API      │  JSON   │  /jmap/session (JMAP)    │
+│  email, IMAP, SMTP, │         │                      │         │  /jmap/ (send/receive)   │
+│  JMAP IDs, DNS      │         │  Auto-discovers:     │         │                          │
+│                     │         │  • JMAP account IDs   │         │  IMAP :1993, SMTP :1587  │
+│                     │         │  • DNS records        │         │                          │
+└─────────────────────┘         └─────────────────────┘         └──────────────────────────┘
 ```
 
 **How it works:**
 1. A user requests a new Stalwart Mailbox in the Codesphere UI
 2. Codesphere calls `POST /` on your REST backend with config + secrets
-3. Your backend calls Stalwart's admin API to create the user
-4. Codesphere polls `GET /?id=...` to get connection details (IMAP, SMTP, etc.)
-5. The user sees their email credentials in the Codesphere dashboard
+3. Your backend auto-creates the mail domain, then creates the user via Stalwart's admin API
+4. The backend fetches DNS records and JMAP session details (account ID, identity ID, drafts mailbox ID) in parallel
+5. Codesphere polls `GET /?id=...` to get connection details (IMAP, SMTP, JMAP IDs, DNS records, etc.)
+6. The user sees everything they need to connect in the Codesphere dashboard
 
 ---
 
 ## 2. Prerequisites
 
 - **Docker** (or Colima on macOS) for running Stalwart
-- **Node.js 20+** for the REST backend
+- **Node.js 18+** for the REST backend
 - A **Codesphere dev instance** (for registration/testing)
 - `yq` — `brew install yq` (used by the validate script)
 
@@ -79,11 +69,11 @@ Create a `docker-compose.local.yml`:
 ```yaml
 services:
   stalwart:
-    image: stalwartlabs/mail-server:v0.11
+    image: stalwartlabs/stalwart:v0.13.2
     container_name: stalwart-mail
     restart: unless-stopped
     ports:
-      - "1443:443"     # HTTPS (admin UI + JMAP + webmail)
+      - "1080:8080"    # HTTP (admin UI + JMAP + webmail)
       - "1025:25"      # SMTP
       - "1587:587"     # SMTP submission
       - "1993:993"     # IMAPS
@@ -102,28 +92,28 @@ Start it:
 docker compose -f docker-compose.local.yml up -d
 ```
 
-> **Note:** Don't use the `latest` tag — `stalwartlabs/mail-server:latest` doesn't exist. Pin a version like `v0.11`.
+> **Note:** Use `stalwartlabs/stalwart:v0.13.2` — not `stalwartlabs/mail-server` (old image name) and not `latest` (doesn't exist). The HTTP admin port is `8080` inside the container, mapped to `1080` locally.
 
 Verify it's running:
 
 ```bash
 # Check admin API responds
-curl -sk "https://localhost:1443/api/principal" \
-  -H "Authorization: Basic $(echo -n admin:localdev123 | base64)"
+curl -s http://localhost:1080/api/principal \
+  -u admin:localdev123
 # → {"data":{"items":[],"total":0}}
 ```
 
-The admin UI is at `https://localhost:1443` (login: `admin` / `localdev123`).
+The admin UI is at http://localhost:1080 (login: `admin` / `localdev123`).
 
 ---
 
 ## 4. Step 2 — Write the provider.yml
 
-Create `provider.yml` at the **repo root** (Codesphere fetches it from root, not a subdirectory):
+Create `config/provider.yml`:
 
 ```yaml
 name: stalwart-mailbox
-version: v1
+version: v2
 author: Codesphere
 displayName: Stalwart Mailbox
 iconUrl: https://stalw.art/img/logo.svg
@@ -134,24 +124,20 @@ description: |
   Backed by a REST API that communicates with the Stalwart admin API.
 
 backend:
-  rest:
-    url: http://localhost:9090
-    authTokenEnv: BACKEND_AUTH_TOKEN
+  api:
+    endpoint: http://localhost:9090
 
 plans:
   - id: 0
     name: starter
-    displayName: Starter
     description: Basic mailbox with 500 MB storage
     parameters: {}
   - id: 1
     name: standard
-    displayName: Standard
     description: Standard mailbox with 2 GB storage
     parameters: {}
   - id: 2
     name: premium
-    displayName: Premium
     description: Premium mailbox with 10 GB storage
     parameters: {}
 
@@ -161,6 +147,10 @@ configSchema:
     EMAIL_PREFIX:
       type: string
       description: Local part of the email address (the part before @)
+      x-update-constraint: immutable
+    MAIL_DOMAIN:
+      type: string
+      description: Email domain (e.g. example.com). Each domain is created automatically.
       x-update-constraint: immutable
     DISPLAY_NAME:
       type: string
@@ -183,6 +173,8 @@ detailsSchema:
       type: string
     username:
       type: string
+    mail_domain:
+      type: string
     imap_host:
       type: string
     imap_port:
@@ -193,8 +185,20 @@ detailsSchema:
       type: integer
     jmap_url:
       type: string
+    jmap_account_id:
+      type: string
+      description: JMAP account ID for API calls
+    jmap_identity_id:
+      type: string
+      description: JMAP identity ID for EmailSubmission
+    jmap_drafts_mailbox_id:
+      type: string
+      description: JMAP mailbox ID for Drafts folder
     webmail_url:
       type: string
+    dns_records:
+      type: string
+      description: DNS records to add to your domain for email delivery (SPF, DMARC, MX, DKIM)
     ready:
       type: boolean
 ```
@@ -209,7 +213,7 @@ detailsSchema:
 | `plans[].name` | Required string identifier |
 | `plans[].parameters` | Required object (can be empty `{}`) |
 | `secretsSchema` | Use `format: password`. Never set default values |
-| `backend` | Exactly one of `backend.landscape` or `backend.rest` |
+| `backend` | Use `backend.api.endpoint` for REST backends |
 
 ---
 
@@ -265,20 +269,20 @@ async function parseStalwartResponse(response) {
 
 Creating a user with email `alice@example.com` requires the domain `example.com` to already exist as a Stalwart principal. Otherwise you get `{"error": "notFound", "item": "example.com"}` (with HTTP 200!).
 
-Solution — auto-create the domain on first request:
+The backend supports **multiple domains** — each service specifies its own `MAIL_DOMAIN`. Domains are auto-created and cached:
 
 ```js
-let domainEnsured = false;
-async function ensureDomain() {
-  if (domainEnsured) return;
+const ensuredDomains = new Set();
+async function ensureDomain(domain) {
+  if (ensuredDomains.has(domain)) return;
   const resp = await stalwartRequest('POST', '/api/principal', {
     type: 'domain',
-    name: STALWART_MAIL_DOMAIN,
-    description: `Mail domain ${STALWART_MAIL_DOMAIN}`,
+    name: domain,
+    description: `Mail domain ${domain}`,
   });
   const result = await parseStalwartResponse(resp);
-  if (result.ok || result.error.startsWith('alreadyExists')) {
-    domainEnsured = true;
+  if (result.ok || (result.error && (result.error.includes('alreadyExists') || result.error.includes('AlreadyExists')))) {
+    ensuredDomains.add(domain);
   }
 }
 ```
@@ -343,7 +347,10 @@ Stalwart expects all array fields even if empty:
 
 ### Full source
 
-See `src/rest-backend/server.js` in this repository for the complete implementation.
+See `src/rest-backend/server.js` in this repository for the complete implementation, which also includes:
+- **`fetchDnsRecords(domain)`** — retrieves required DNS records (SPF, DKIM, DMARC, MX) from Stalwart's `/api/dns/records/{domain}` endpoint
+- **`fetchJmapDetails(username, password)`** — auto-discovers JMAP session details (account ID, identity ID, drafts mailbox ID) so consumers can send email via JMAP without manual discovery
+- **`buildDetails()`** — assembles all connection details including DNS and JMAP data, fetched in parallel
 
 ---
 
@@ -354,16 +361,12 @@ See `src/rest-backend/server.js` in this repository for the complete implementat
 ```bash
 cd src/rest-backend && npm install
 
-STALWART_API_URL=https://localhost:1443 \
+STALWART_API_URL=http://localhost:1080 \
 STALWART_ADMIN_TOKEN=admin:localdev123 \
-STALWART_MAIL_DOMAIN=localhost \
 STALWART_IMAP_HOST=localhost \
 STALWART_SMTP_HOST=localhost \
 STALWART_IMAP_PORT=1993 \
 STALWART_SMTP_PORT=1587 \
-STALWART_JMAP_URL=https://localhost:1443/jmap \
-STALWART_WEBMAIL_URL=https://localhost:1443/login \
-NODE_TLS_REJECT_UNAUTHORIZED=0 \
 PORT=9090 \
 node server.js
 ```
@@ -376,7 +379,13 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST http://localhost:9090/ \
   -H "Content-Type: application/json" \
   -d '{
     "id": "550e8400-e29b-41d4-a716-446655440000",
-    "config": { "EMAIL_PREFIX": "alice", "DISPLAY_NAME": "Alice Doe", "QUOTA_MB": 500 },
+    "plan": {"id": 0, "parameters": {}},
+    "config": {
+      "EMAIL_PREFIX": "alice",
+      "MAIL_DOMAIN": "example.com",
+      "DISPLAY_NAME": "Alice Doe",
+      "QUOTA_MB": 500
+    },
     "secrets": { "MAIL_PASSWORD": "supersecret123" }
   }'
 # → HTTP 201
@@ -385,13 +394,13 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST http://localhost:9090/ \
 **Read:**
 ```bash
 curl -s http://localhost:9090/?id=550e8400-e29b-41d4-a716-446655440000 | python3 -m json.tool
-# → Shows email, IMAP/SMTP details, ready: true
+# → Shows email, IMAP/SMTP details, JMAP IDs, DNS records, ready: true
 ```
 
 **Verify in Stalwart directly:**
 ```bash
-curl -sk "https://localhost:1443/api/principal?types=individual&limit=10" \
-  -H "Authorization: Basic $(echo -n admin:localdev123 | base64)" | python3 -m json.tool
+curl -s http://localhost:1080/api/principal?types=individual\&limit=10 \
+  -u admin:localdev123 | python3 -m json.tool
 # → Shows alice with quota 524288000 (500 MB), role "user"
 ```
 
@@ -411,36 +420,64 @@ curl -s -w "\nHTTP %{http_code}\n" -X DELETE \
 # → HTTP 204
 ```
 
+### Test JMAP email sending
+
+After creating a mailbox, use the JMAP IDs from the GET response to send an email:
+
+```bash
+curl -s http://localhost:1080/jmap/ \
+  -u 'alice:supersecret123' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "using": [
+      "urn:ietf:params:jmap:core",
+      "urn:ietf:params:jmap:mail",
+      "urn:ietf:params:jmap:submission"
+    ],
+    "methodCalls": [
+      ["Email/set", {
+        "accountId": "<jmap_account_id from GET response>",
+        "create": {
+          "draft1": {
+            "mailboxIds": {"<jmap_drafts_mailbox_id>": true},
+            "from": [{"name": "Alice", "email": "alice@example.com"}],
+            "to": [{"name": "Bob", "email": "bob@example.com"}],
+            "subject": "Hello!",
+            "textBody": [{"partId": "body", "type": "text/plain"}],
+            "bodyValues": {"body": {"value": "Sent via JMAP!", "isEncodingProblem": false}}
+          }
+        }
+      }, "c1"],
+      ["EmailSubmission/set", {
+        "accountId": "<jmap_account_id>",
+        "create": {
+          "sub1": {
+            "identityId": "<jmap_identity_id>",
+            "emailId": "#draft1"
+          }
+        }
+      }, "c2"]
+    ]
+  }' | python3 -m json.tool
+```
+
+If both method responses contain `"created"`, the email was sent. See `JMAP_GUIDE.md` for a detailed walkthrough.
+
 ---
 
 ## 7. Step 5 — Register with Codesphere
 
-REST backend providers are registered through the **platform configuration**, not the git-based API endpoint.
+REST backend providers are registered through the **platform configuration** (`MANAGED_SERVICE_PROVIDERS` environment variable on the Codesphere instance).
 
 ### For Codesphere Private Cloud / Dev Instance
 
-Add your provider to the `MANAGED_SERVICE_PROVIDERS` environment variable:
+Add your provider to the `MANAGED_SERVICE_PROVIDERS` environment variable as a JSON entry. The provider definition (including schemas, plans, and backend endpoint) is read from the `provider.yml` and applied to the platform config.
 
-```json
-{
-  "name": "stalwart-mailbox",
-  "version": "v1",
-  "iconUrl": "https://stalw.art/img/logo.svg",
-  "backend": {
-    "api": {
-      "endpoint": "http://localhost:9090"
-    }
-  }
-}
-```
+> **Important:** The `POST /api/managed-services/providers` API endpoint only works for **landscape-based** providers (via `gitUrl`). REST backend providers must be added to `MANAGED_SERVICE_PROVIDERS`.
 
-Append it to the existing array in your Codesphere config, then restart the marketplace service.
+### Using `make register` (landscape providers)
 
-> **Important:** The `POST /api/managed-services/providers` API endpoint only works for **landscape-based** providers (via `gitUrl`). REST backend providers must be registered through the platform config. The config additionally needs the schemas (`configSchema`, `secretsSchema`, `detailsSchema`) and `plans` — check your Codesphere admin docs for the exact config format.
-
-### For landscape-based providers (alternative)
-
-If you later want to use the git-based registration:
+For landscape-based providers, you can use the git-based registration:
 
 ```bash
 CODESPHERE_URL=http://localhost:8080 \
@@ -448,6 +485,8 @@ CODESPHERE_API_TOKEN=your-token \
 CODESPHERE_TEAM_ID=your-team-id \
 make register
 ```
+
+This clones the repo and reads `provider.yml`.
 
 This clones the repo and reads `provider.yml` from the **repo root** (not from `config/`).
 
@@ -463,9 +502,11 @@ These are real issues encountered during development — save yourself the debug
 |--------|--------|
 | **HTTP 200 for errors** | Stalwart returns 200 with `{"error": "notFound"}`. Always parse the response body for an `error` field. |
 | **Domain must exist first** | Creating `alice@example.com` fails if the `example.com` domain principal doesn't exist. Create it with `type: "domain"` first. |
+| **`fieldAlreadyExists` vs `alreadyExists`** | Stalwart can return either error string for duplicate principals. Check for both with `includes()`. |
 | **PATCH is an action array** | Send `[{"action":"set","field":"...","value":"..."}]`, not a flat object. |
 | **Use username, not ID** | `PATCH/DELETE /api/principal/{name}` — use the string username, not the numeric ID from create. |
-| **No `latest` Docker tag** | `stalwartlabs/mail-server:latest` doesn't exist. Pin to `v0.11` or check Docker Hub. |
+| **Docker image name changed** | Use `stalwartlabs/stalwart:v0.13.2` — not the old `stalwartlabs/mail-server`. |
+| **IP blocking** | Too many failed TLS handshakes can trigger Stalwart's brute-force protection. Fix by wiping the volume: `docker compose down -v`. |
 
 ### provider.yml
 
@@ -474,15 +515,15 @@ These are real issues encountered during development — save yourself the debug
 | **Plan IDs are integers** | `id: 0`, not `id: "starter"`. The API rejects string IDs. |
 | **Plans need `name`** | Each plan needs both `id` (integer) and `name` (string). |
 | **Plans need `parameters`** | Even if empty, `parameters: {}` is required. |
-| **File must be at repo root** | Codesphere fetches `provider.yml` from the repository root, not from `config/`. |
+| **Use `backend.api.endpoint`** | For REST backends, use `backend.api.endpoint`, not `backend.rest.url`. |
 
 ### Registration
 
 | Gotcha | Detail |
 |--------|--------|
-| **REST ≠ gitUrl registration** | The `POST /providers` API only supports landscape backends. REST backends go in platform config. |
+| **REST ≠ gitUrl registration** | The `POST /providers` API only supports landscape backends. REST backends go in `MANAGED_SERVICE_PROVIDERS` env var. |
 | **Global scope needs admin** | Creating global providers requires cluster admin permissions. Use team scope for testing. |
-| **Repo must be accessible** | If using gitUrl, the repo must be public or Codesphere needs GitHub credentials. |
+| **Repo must be accessible** | If using gitUrl (landscape providers), the repo must be public or Codesphere needs GitHub credentials. |
 
 ---
 
@@ -490,11 +531,12 @@ These are real issues encountered during development — save yourself the debug
 
 For production, you'll need:
 
-1. **A real domain** with DNS records (MX, SPF, DKIM, DMARC)
+1. **A real domain** with DNS records (MX, SPF, DKIM, DMARC) — the backend auto-retrieves these per domain via `/api/dns/records/{domain}`
 2. **TLS certificates** (Stalwart supports ACME/Let's Encrypt)
 3. **The REST backend behind HTTPS** (use a reverse proxy like Caddy or nginx)
 4. **Persistent storage** for the backend state (replace the in-memory `Map` with a database)
-5. **Auth tokens** set on both the backend (`AUTH_TOKEN`) and in Codesphere (`BACKEND_AUTH_TOKEN`)
+5. **Auth tokens** set on both the backend (`AUTH_TOKEN`) and in Codesphere
+6. **Port 25 outbound access** — many cloud providers block this; consider an SMTP relay (Amazon SES, Mailgun) if needed
 
 See `STALWART_SETUP.md` in this repository for the full production Docker setup guide.
 
@@ -506,28 +548,34 @@ When a user provisions a Stalwart Mailbox through Codesphere, they get:
 |-------|---------|
 | **Email** | `alice@example.com` |
 | **Username** | `alice` |
+| **Mail Domain** | `example.com` |
 | **IMAP Host** | `mail.example.com:993` (TLS) |
 | **SMTP Host** | `mail.example.com:587` (STARTTLS) |
 | **JMAP URL** | `https://mail.example.com/jmap` |
+| **JMAP Account ID** | Auto-discovered, ready for API use |
+| **JMAP Identity ID** | Auto-discovered, for EmailSubmission |
+| **JMAP Drafts Mailbox ID** | Auto-discovered, for creating drafts |
 | **Webmail** | `https://mail.example.com/login` |
+| **DNS Records** | SPF, DKIM, DMARC, MX records for the domain |
 
-They can plug these into any email client (Thunderbird, Apple Mail, Outlook, etc.).
+They can plug the IMAP/SMTP into any email client (Thunderbird, Apple Mail, Outlook), or use the JMAP IDs to send email programmatically. See `JMAP_GUIDE.md` for a step-by-step JMAP walkthrough.
 
 ---
 
 ## Quick Reference — File Layout
 
 ```
-├── provider.yml                    # Provider definition (repo root — required by Codesphere)
+stalwart-provider/
 ├── config/
-│   └── provider.yml                # Provider definition (working copy)
+│   └── provider.yml                # Provider definition (schemas, plans, backend URL)
 ├── src/
 │   └── rest-backend/
 │       ├── server.js               # REST backend implementation
-│       ├── package.json
-│       └── Dockerfile              # For containerized deployment
-├── docker-compose.local.yml        # Local Stalwart instance
+│       └── package.json
+├── docker-compose.local.yml        # Local Stalwart instance (v0.13.2)
 ├── STALWART_SETUP.md               # Production deployment guide
+├── HACKATHON.md                    # Hackathon quick-start with architecture diagrams
+├── JMAP_GUIDE.md                   # JMAP email sending guide with examples
 ├── Makefile                        # validate / register / test commands
 └── scripts/
     ├── validate.sh
