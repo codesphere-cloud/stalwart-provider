@@ -2,7 +2,7 @@
 
 > **Partner Days — Workshop 5: Managed Services**
 >
-> Duration: ~3 hours · Difficulty: Intermediate · Language: TypeScript / Node.js
+> Duration: ~2 hours · Difficulty: Intermediate · Language: TypeScript / Node.js
 
 ---
 
@@ -12,10 +12,10 @@ By the end of this workshop you will have a **fully working managed service prov
 
 Under the hood you will:
 
-1. Deploy a central **Stalwart Mail Server** instance on Codesphere.
+1. Deploy a central **Stalwart Mail Server** instance on Codesphere using the included `ci.stalwart-provider.yml`.
 2. Implement a **custom REST backend** (Node.js/TypeScript + Express) that wraps Stalwart's admin API and exposes it as a Codesphere Managed Service Adapter.
-3. Write a **`provider.yml`** that describes your service in the Codesphere marketplace.
-4. **Register** the provider via the Codesphere Public API.
+3. Write a **`provider.yml`** that describes your service in the Codesphere marketplace (a reference `provider.yml` is included in the repo).
+4. **Deploy** your provider backend and link it to the pre-registered marketplace entry.
 5. **Book** a service instance through the Codesphere UI, verify it works, and iterate.
 
 ```
@@ -46,10 +46,9 @@ Under the hood you will:
 - [Part 3 — Implement the REST Backend](#part-3--implement-the-rest-backend)
 - [Part 4 — Deploy the Backend on Codesphere](#part-4--deploy-the-backend-on-codesphere)
 - [Part 5 — Write the provider.yml](#part-5--write-the-provideryml)
-- [Part 6 — Register the Provider](#part-6--register-the-provider)
-- [Part 7 — Book & Test a Service Instance](#part-7--book--test-a-service-instance)
-- [Part 8 — Debug & Improve](#part-8--debug--improve)
-- [Part 9 — Wrap-Up: What Users Get](#part-9--wrap-up-what-users-get)
+- [Part 6 — Book & Test a Service Instance](#part-6--book--test-a-service-instance)
+- [Part 7 — Debug & Improve](#part-7--debug--improve)
+- [Part 8 — Wrap-Up: What Users Get](#part-8--wrap-up-what-users-get)
 - [Appendix A — Stalwart API Quick Reference](#appendix-a--stalwart-api-quick-reference)
 - [Appendix B — Gotchas & Troubleshooting](#appendix-b--gotchas--troubleshooting)
 - [Appendix C — JMAP Email Sending](#appendix-c--jmap-email-sending)
@@ -121,15 +120,11 @@ If the user changes config → `PATCH /{id}`. If they delete → `DELETE /{id}`.
 | Git + GitHub access | Clone the template repos |
 | Node.js 18+ (or use the Codesphere workspace) | Run the REST backend |
 
-### Step 1.1 — Clone the Template Repos
+### Step 1.1 — Clone the Template Repo
 
-You'll work with two repositories:
-
-1. **`stalwart-provider`** — The managed service provider template (your REST backend + provider.yml). This is the main repo you'll be editing.
-2. **`stalwart-deployment`** — A ready-made Codesphere landscape that deploys the Stalwart Mail Server itself (already set up for this workshop).
+Everything lives in a single repository — the REST backend, the `provider.yml`, and the Stalwart deployment pipeline (`ci.stalwart-provider.yml`):
 
 ```bash
-# Clone the provider template — this is your main working repo
 git clone https://github.com/codesphere-cloud/stalwart-provider.git
 cd stalwart-provider
 ```
@@ -138,21 +133,18 @@ cd stalwart-provider
 
 ```
 stalwart-provider/
-├── config/
-│   ├── provider.yml                # ← You'll create this (service definition)
-│   ├── provider.yml.example        # Landscape-based example
-│   └── provider.rest.yml.example   # REST-based example (start from this)
 ├── src/
 │   └── rest-backend/
 │       ├── server.js               # ← Reference implementation (your starting point)
 │       ├── package.json
 │       └── Dockerfile
+├── ci.stalwart.yml                 # Codesphere CI pipeline for the Stalwart Mail Server
+├── ci.stalwart-provider.yml        # Codesphere CI pipeline for the REST provider backend
+├── provider.yml                    # Service definition for the Codesphere marketplace
 ├── docker-compose.local.yml        # Local Stalwart for development
-├── provider.yml                    # Root-level provider (used for git-based registration)
-├── Makefile                        # validate / register / test
+├── Makefile                        # validate / test
 └── scripts/
     ├── validate.sh
-    ├── register.sh
     └── test-provider.sh
 ```
 
@@ -623,29 +615,10 @@ In your workspace settings, set these environment variables:
 | `STALWART_IMAP_PORT` | `993` | IMAPS port |
 | `STALWART_SMTP_PORT` | `587` | SMTP submission port |
 | `PORT` | `3000` | Backend listen port |
-| `AUTH_TOKEN` | *(generate a random string)* | Protects your backend |
 
-### 4.3 — Set Up the CI Pipeline
+### 4.3 — CI Pipeline
 
-Create a `ci.yml` in your workspace (or configure via the Codesphere UI):
-
-```yaml
-schemaVersion: v0.2
-
-prepare:
-  steps:
-    - name: Install dependencies
-      command: cd src/rest-backend && npm install
-
-run:
-  backend:
-    steps:
-      - command: cd src/rest-backend && node server.js
-    network:
-      ports:
-        - port: 3000
-          isPublic: true
-```
+The repo includes a pre-configured `ci.stalwart-provider.yml` that installs dependencies and starts the backend. It already references the correct Stalwart host and reads the admin token from the Codesphere vault. Review it — no changes should be needed for the workshop.
 
 ### 4.4 — Deploy and Verify
 
@@ -653,8 +626,7 @@ Deploy the workspace, then verify the backend is reachable:
 
 ```bash
 # Use your workspace's public URL
-curl -s "https://<your-workspace-url>/" \
-  -H "Authorization: Bearer <your-AUTH_TOKEN>"
+curl -s "https://<your-workspace-url>/"
 # Should return [] (empty list of service IDs)
 ```
 
@@ -662,18 +634,16 @@ curl -s "https://<your-workspace-url>/" \
 
 ---
 
-## Part 5 — Write the provider.yml
+## Part 5 — The provider.yml
 
 The `provider.yml` is the definition file that tells Codesphere everything about your service: what it's called, what users can configure, what secrets they need to provide, and what details they'll get back.
 
-### 5.1 — Create Your provider.yml
-
-Create `provider.yml` in the **repository root** (Codesphere reads it from there during git-based registration):
+A reference `provider.yml` is already included in the repository root. Review it and adjust if needed:
 
 ```yaml
 name: stalwart-mailbox
-version: v1
-author: Workshop Team
+version: v2
+author: Codesphere
 displayName: Stalwart Mailbox
 iconUrl: https://stalw.art/img/logo.svg
 category: messaging
@@ -683,7 +653,7 @@ description: |
 
 backend:
   api:
-    endpoint: https://<your-workspace-url>
+    endpoint: https://ms-provider-stalwart.csa.codesphere-demo.com
 
 plans:
   - id: 0
@@ -693,6 +663,10 @@ plans:
   - id: 1
     name: standard
     description: Standard mailbox with 2 GB storage
+    parameters: {}
+  - id: 2
+    name: premium
+    description: Premium mailbox with 10 GB storage
     parameters: {}
 
 configSchema:
@@ -785,72 +759,13 @@ make validate
 
 ---
 
-## Part 6 — Register the Provider
+## Part 6 — Book & Test a Service Instance
 
-Now register your provider with the Codesphere marketplace so it appears in the service catalog.
+> **Note:** The Stalwart Mailbox provider has already been **pre-registered** in the workshop platform instance. Custom REST-backend providers must be configured in the platform's global `config.yaml` — they cannot be registered via the Public API (which only supports landscape-based providers). For details on how providers are configured, see the [Codesphere Private Cloud Install Guide](https://docs.codesphere.com/docs/Private_Cloud/install-guide).
+>
+> The pre-registered provider points to `https://ms-provider-stalwart.csa.codesphere-demo.com`. Once you deploy your backend and link this custom domain to your workspace, the marketplace entry will route traffic to your implementation.
 
-### 6.1 — Option A: Register via Swagger UI (Recommended for Workshop)
-
-1. Open the Codesphere Swagger UI: `https://<codesphere-instance>/api/swagger-ui`
-2. Authenticate with your API token.
-3. Find the **POST `/managed-services/providers`** endpoint.
-4. Send a request with:
-
-```json
-{
-  "gitUrl": "https://github.com/<your-org>/stalwart-provider",
-  "scope": {
-    "type": "team",
-    "teamIds": [<your-team-id>]
-  }
-}
-```
-
-Codesphere will fetch your `provider.yml` from the repository, validate it, and register the provider.
-
-### 6.2 — Option B: Register via curl
-
-```bash
-export CODESPHERE_URL="https://<codesphere-instance>"
-export CODESPHERE_API_TOKEN="<your-token>"
-export CODESPHERE_TEAM_ID="<your-team-id>"
-
-curl -X POST "$CODESPHERE_URL/api/managed-services/providers" \
-  -H "Authorization: Bearer $CODESPHERE_API_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "gitUrl": "https://github.com/<your-org>/stalwart-provider",
-    "scope": {
-      "type": "team",
-      "teamIds": ['"$CODESPHERE_TEAM_ID"']
-    }
-  }'
-```
-
-### 6.3 — Option C: Register via Make
-
-```bash
-CODESPHERE_URL=https://<codesphere-instance> \
-CODESPHERE_API_TOKEN=<your-token> \
-CODESPHERE_TEAM_ID=<your-team-id> \
-make register
-```
-
-### 6.4 — Verify Registration
-
-After successful registration, your provider should appear in the managed services catalog:
-
-1. Navigate to **Managed Services** in the Codesphere UI.
-2. Look for **"Stalwart Mailbox"** in the service grid.
-3. Click it to see your configuration fields.
-
-✅ **Checkpoint:** Your provider is visible in the Codesphere service catalog.
-
----
-
-## Part 7 — Book & Test a Service Instance
-
-### 7.1 — Create a Service Instance via the UI
+### 6.1 — Create a Service Instance via the UI
 
 1. Go to **Managed Services** → Click **"Stalwart Mailbox"** → **"Start Setup"**
 2. Fill in the configuration:
@@ -863,7 +778,7 @@ After successful registration, your provider should appear in the managed servic
 4. Select the **Starter** plan.
 5. Click **"Create Service"**.
 
-### 7.2 — Watch the Reconciliation
+### 6.2 — Watch the Reconciliation
 
 Switch to the Managed Services table. You'll see your service go through these states:
 
@@ -873,7 +788,7 @@ Creating  →  Synchronized
 
 The reconciler is calling your backend's `POST /` to create the account and then polling `GET /?id=...` to check the status. Once your backend returns `ready: true` in the details, the service transitions to `Synchronized`.
 
-### 7.3 — View the Connection Details
+### 6.3 — View the Connection Details
 
 Click the gear icon on your service to open the details view. You should see:
 
@@ -889,7 +804,7 @@ Click the gear icon on your service to open the details view. You should see:
 | **dns_records** | MX, SPF, DKIM, DMARC records |
 | **ready** | `true` |
 
-### 7.4 — Test the Mailbox
+### 6.4 — Test the Mailbox
 
 #### Option A: Webmail
 
@@ -943,7 +858,7 @@ curl -s "$STALWART_API_URL/jmap/" \
 
 If both method responses contain `"created"` → the email was sent! 🎉
 
-### 7.5 — Test Update and Delete
+### 6.5 — Test Update and Delete
 
 **Update** the display name or quota via the Codesphere UI or API, and verify the change takes effect.
 
@@ -959,7 +874,7 @@ curl -s "$STALWART_API_URL/api/principal/yourname" \
 
 ---
 
-## Part 8 — Debug & Improve
+## Part 7 — Debug & Improve
 
 ### Common Issues
 
@@ -980,15 +895,14 @@ Once the basic lifecycle works, consider these enhancements:
 |-------------|-----------|-------------|
 | **Persistent storage** | ⭐⭐ | Replace the in-memory `Map` with a database (e.g., Codesphere's managed PostgreSQL) so state survives backend restarts |
 | **Input validation** | ⭐ | Validate EMAIL_PREFIX format, domain format, password strength |
-| **Auth middleware** | ⭐ | Ensure only Codesphere can call your backend (check `AUTH_TOKEN`) |
 | **Error details** | ⭐ | Return more descriptive error messages that Codesphere can show to the user |
 | **Health endpoint** | ⭐ | Add `GET /health` that checks Stalwart connectivity |
 | **Quota enforcement** | ⭐⭐ | Map plan IDs to actual quota values (Starter=500MB, Standard=2GB, Premium=10GB) |
-| **Multi-domain isolation** | ⭐⭐ | Let each team use their own domain |
+| **Multi-domain isolation** | ⭐⭐⭐ | Currently every new instance re-uses or creates a domain without ownership checks — add validation so that a service instance creator actually belongs to the organization owning a domain |
 
 ---
 
-## Part 9 — Wrap-Up: What Users Get
+## Part 8 — Wrap-Up: What Users Get
 
 When everything is wired up, here's the complete experience from a Codesphere user's perspective:
 
