@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROVIDER_CONFIG="config/provider.yml"
-CI_CONFIG="config/ci.yml"
+PROVIDER_CONFIG="provider.yml"
+CI_CONFIG="ci.stalwart-provider.yml"
 
 echo "=== Testing Provider ==="
 echo ""

@@ -1,7 +1,7 @@
 schemaVersion: v0.2
 prepare:
   steps:
-    - command: cd src/rest-backend && npm i
+    - command: cd src && npm i
 test:
   steps: []
 run:
@@ -22,4 +22,4 @@ run:
       STALWART_SMTP_PORT: 587
       PORT: 3000
     steps:
-      - command: cd src/rest-backend && node server.js
+      - command: cd src && node server.js

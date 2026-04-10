@@ -134,15 +134,15 @@ cd stalwart-provider
 ```
 stalwart-provider/
 ├── src/
-│   └── rest-backend/
-│       ├── server.js               # ← Reference implementation (your starting point)
-│       ├── package.json
-│       └── Dockerfile
-├── ci.stalwart.yml                 # Codesphere CI pipeline for the Stalwart Mail Server
-├── ci.stalwart-provider.yml        # Codesphere CI pipeline for the REST provider backend
+│   ├── server.js                   # ← Reference implementation (your starting point)
+│   ├── package.json
+│   └── Dockerfile
+├── ci.stalwart.yml                 # CI pipeline for the Stalwart Mail Server deployment
+├── ci.stalwart-provider.yml        # CI pipeline for the REST provider backend
 ├── provider.yml                    # Service definition for the Codesphere marketplace
 ├── docker-compose.local.yml        # Local Stalwart for development
-├── Makefile                        # validate / test
+├── examples/                       # Generic provider.yml / ci.yml examples (for reference)
+├── Makefile                        # validate / test / start-api-backend / send-mail
 └── scripts/
     ├── validate.sh
     └── test-provider.sh
@@ -291,7 +291,7 @@ This is the core of the workshop. You will build a Node.js/Express application t
 ### 3.1 — Project Setup
 
 ```bash
-cd src/rest-backend
+cd src
 npm install
 ```
 
@@ -540,7 +540,7 @@ async function buildDetails(username: string, email: string, domain: string, pas
 Start the backend:
 
 ```bash
-cd src/rest-backend
+cd src
 
 STALWART_API_URL=http://localhost:1080 \
 STALWART_ADMIN_TOKEN=admin:localdev123 \
