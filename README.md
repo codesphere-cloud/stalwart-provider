@@ -1,30 +1,45 @@
-# Example REST Backend
+# Stalwart Managed Service Provider
 
-A minimal Node.js implementation of the [Codesphere Managed Service Adapter API](https://docs.codesphere.com/managed-services/create-custom-rest-backend).
+A Codesphere managed service provider that wraps [Stalwart Mail Server](https://stalw.art/) as a self-service email offering. Users can provision individual mailboxes (with IMAP, SMTP, JMAP, and webmail access) through the Codesphere marketplace.
 
-This backend provides the four required endpoints:
+## How It Works
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/` | Create a new service |
-| `GET` | `/?id=...` | Get status of services (or list all IDs) |
-| `PATCH` | `/:id` | Update an existing service |
-| `DELETE` | `/:id` | Delete a service |
+A single shared Stalwart instance hosts many mail accounts. When a user books the service through Codesphere, the REST backend creates a new mail account ("logical tenant") on that shared server. When they delete the service, the account is removed.
+
+```
+Codesphere Platform  ◄──► REST Backend (this repo)  ──► Stalwart Mail Server
+  (reconcile loop)         POST/GET/PATCH/DELETE          (shared instance)
+```
+
+## Repository Structure
+
+```
+├── src/                        # REST backend (Node.js/Express)
+│   ├── server.js               # Managed service adapter implementation
+│   └── package.json
+├── ci.stalwart-provider.yml    # CI pipeline for the REST backend
+├── ci.stalwart.yml             # CI pipeline for the Stalwart Mail Server
+├── provider.yml                # Marketplace service definition
+├── docker-compose.local.yml    # Local Stalwart for development
+├── examples/                   # Generic provider.yml / ci.yml examples
+├── Makefile                    # validate, test, start-api-backend, send-mail
+└── WORKSHOP_TUTORIAL.md        # Step-by-step workshop guide
+```
 
 ## Quick Start
 
 ```bash
-npm i
-. .example.env && npm start
+# Local development with Docker
+docker compose -f docker-compose.local.yml up -d
+make start-api-backend
+
+# Validate provider.yml
+make validate
+
+# Send a test email via JMAP
+make send-mail JMAP_TO_EMAIL=someone@example.com
 ```
 
-## Configuration
+## Workshop
 
-| Env Var | Default | Description |
-|---------|---------|-------------|
-| `PORT` | `3000` | Port to listen on |
-| `AUTH_TOKEN` | _(none)_ | Bearer token for authentication (recommended) |
-
-## Customization
-
-This example uses an in-memory store. Replace the `TODO` comments in `server.js` with your actual infrastructure provisioning logic (e.g., cloud API calls, Kubernetes operations, database management).
+See [./guides/WORKSHOP_TUTORIAL.md](./guides/WORKSHOP_TUTORIAL.md) for the full hands-on guide.

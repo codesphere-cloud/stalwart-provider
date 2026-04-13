@@ -1,0 +1,38 @@
+schemaVersion: v0.2
+prepare:
+  steps: []
+test:
+  steps: []
+run:
+  service:
+    healthEndpoint: http://localhost:8080/login
+    plan: 8
+    replicas: 1
+    network:
+      ports:
+        - port: 3000
+          isPublic: false
+        - port: 8080
+          isPublic: false
+        - port: 25
+          isPublic: false
+        - port: 587
+          isPublic: false
+        - port: 993
+          isPublic: false
+        - port: 443
+          isPublic: false
+      paths:
+        - port: 8080
+          path: /
+    env: {}
+    runAsUser: 0
+    runAsGroup: 0
+    volumeMounts:
+      - name: _workspace
+        mountPath: /opt/stalwart-mail
+        workspacePath: stalwart-data
+    steps:
+      - command: whoami
+      - command: /bin/sh /usr/local/bin/entrypoint.sh
+    image: stalwartlabs/stalwart:v0.13.2
