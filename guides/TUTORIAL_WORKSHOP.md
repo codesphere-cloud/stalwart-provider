@@ -2,7 +2,7 @@
 
 > **Partner Days — Workshop 5: Managed Services**
 >
-> Duration: ~2 hours · Difficulty: Intermediate · Language: TypeScript / Node.js
+> Duration: ~2 hours · Difficulty: Intermediate · Language: JavaScript / Node.js
 
 ---
 
@@ -12,7 +12,7 @@ By the end of this workshop you will have a **fully working managed service prov
 
 Under the hood you will:
 
-1. Deploy a central **Stalwart Mail Server** instance on Codesphere using the included `ci.stalwart-provider.yml`.
+1. Deploy a central **Stalwart Mail Server** instance on Codesphere using the included `ci.stalwart.yml`.
 2. Implement a **custom REST backend** (Node.js/TypeScript + Express) that wraps Stalwart's admin API and exposes it as a Codesphere Managed Service Adapter.
 3. Write a **`provider.yml`** that describes your service in the Codesphere marketplace (a reference `provider.yml` is included in the repo).
 4. **Deploy** your provider backend and link it to the pre-registered marketplace entry.
@@ -50,8 +50,9 @@ Under the hood you will:
 - [Part 7 — Debug & Improve](#part-7--debug--improve)
 - [Part 8 — Wrap-Up: What Users Get](#part-8--wrap-up-what-users-get)
 - [Appendix A — Stalwart API Quick Reference](#appendix-a--stalwart-api-quick-reference)
-- [Appendix B — Gotchas & Troubleshooting](#appendix-b--gotchas--troubleshooting)
-- [Appendix C — JMAP Email Sending](#appendix-c--jmap-email-sending)
+- [Appendix B — Environment Variables](#appendix-b--environment-variables)
+- [Appendix C — Gotchas & Troubleshooting](#appendix-c--gotchas--troubleshooting)
+- [Appendix D — JMAP Email Sending](#appendix-d--jmap-email-sending)
 
 ---
 
@@ -115,37 +116,31 @@ If the user changes config → `PATCH /{id}`. If they delete → `DELETE /{id}`.
 
 | What | Why |
 |------|-----|
-| A Codesphere account on the workshop instance | Deploy workspaces, register providers |
-| `CODESPHERE_API_TOKEN` | Authenticate with the Codesphere API ([create one in user settings](https://docs.codesphere.com/api)) |
-| Git + GitHub access | Clone the template repos |
+| A Codesphere account on the workshop instance | Deploy workspaces, book managed services |
 | Node.js 18+ (or use the Codesphere workspace) | Run the REST backend |
 
-### Step 1.1 — Clone the Template Repo
+### Step 1.1 — Get the Repository
 
-Everything lives in a single repository — the REST backend, the `provider.yml`, and the Stalwart deployment pipeline (`ci.stalwart-provider.yml`):
+Everything lives in a single repository — the REST backend, the `provider.yml`, and the CI pipelines.
 
-```bash
-git clone https://github.com/codesphere-cloud/stalwart-provider.git
-cd stalwart-provider
+Create a new Codesphere workspace from this repo (you can import it directly via the Codesphere UI):
+
+```
+https://github.com/codesphere-cloud/stalwart-provider
 ```
 
 ### Step 1.2 — Familiarize Yourself with the Structure
 
 ```
 stalwart-provider/
-├── src/
-│   ├── server.js                   # ← Reference implementation (your starting point)
-│   ├── package.json
-│   └── Dockerfile
+├── server.js                       # ← Reference implementation (your starting point)
+├── package.json
 ├── ci.stalwart.yml                 # CI pipeline for the Stalwart Mail Server deployment
 ├── ci.stalwart-provider.yml        # CI pipeline for the REST provider backend
 ├── provider.yml                    # Service definition for the Codesphere marketplace
-├── docker-compose.local.yml        # Local Stalwart for development
-├── examples/                       # Generic provider.yml / ci.yml examples (for reference)
-├── Makefile                        # validate / test / start-api-backend / send-mail
-└── scripts/
-    ├── validate.sh
-    └── test-provider.sh
+├── docker-compose.local.yml        # Local Stalwart for development (optional)
+└── guides/
+    └── TUTORIAL_WORKSHOP.md        # This file
 ```
 
 ### Step 1.3 — Verify the Stalwart Instance
@@ -164,14 +159,7 @@ curl -s "$STALWART_API_URL/api/principal" \
 # Expected: {"data": {"items": [...], "total": ...}}
 ```
 
-> **💡 Local development alternative:** If you prefer to run everything locally first, start a local Stalwart using the included Docker Compose file:
->
-> ```bash
-> docker compose -f docker-compose.local.yml up -d
-> # Admin UI: http://localhost:1080 (admin / localdev123)
-> export STALWART_API_URL="http://localhost:1080"
-> export STALWART_ADMIN_TOKEN="admin:localdev123"
-> ```
+> **💡 Tip:** A `docker-compose.local.yml` is included if you ever want to run Stalwart locally outside of the workshop.
 
 ---
 
@@ -291,16 +279,10 @@ This is the core of the workshop. You will build a Node.js/Express application t
 ### 3.1 — Project Setup
 
 ```bash
-cd src
 npm install
 ```
 
-The `package.json` already includes `express`. If you want to use TypeScript, add it now:
-
-```bash
-npm install typescript ts-node @types/express @types/node --save-dev
-npx tsc --init
-```
+The `package.json` already includes `express`.
 
 ### 3.2 — Architecture of Your Backend
 
@@ -535,28 +517,13 @@ async function buildDetails(username: string, email: string, domain: string, pas
 }
 ```
 
-### 3.4 — Test Your Backend Locally
+### 3.4 — Test Your Backend
 
-Start the backend:
-
-```bash
-cd src
-
-STALWART_API_URL=http://localhost:1080 \
-STALWART_ADMIN_TOKEN=admin:localdev123 \
-STALWART_IMAP_HOST=localhost \
-STALWART_SMTP_HOST=localhost \
-STALWART_IMAP_PORT=1993 \
-STALWART_SMTP_PORT=1587 \
-PORT=9090 \
-node server.js
-```
-
-Run through the full CRUD lifecycle:
+Once deployed on Codesphere (see Part 4), you can test the full CRUD lifecycle against your workspace URL. The examples below use `localhost:3000` — replace with your actual workspace URL when testing on Codesphere:
 
 ```bash
 # CREATE
-curl -s -w "\nHTTP %{http_code}\n" -X POST http://localhost:9090/ \
+curl -s -w "\nHTTP %{http_code}\n" -X POST http://localhost:3000/ \
   -H "Content-Type: application/json" \
   -d '{
     "id": "550e8400-e29b-41d4-a716-446655440000",
@@ -572,19 +539,19 @@ curl -s -w "\nHTTP %{http_code}\n" -X POST http://localhost:9090/ \
 # Expected: HTTP 201
 
 # READ (what Codesphere's reconciler does)
-curl -s "http://localhost:9090/?id=550e8400-e29b-41d4-a716-446655440000" | python3 -m json.tool
+curl -s "http://localhost:3000/?id=550e8400-e29b-41d4-a716-446655440000" | python3 -m json.tool
 # Expected: details with email, IMAP/SMTP hosts, JMAP IDs, DNS records, ready: true
 
 # UPDATE
 curl -s -w "\nHTTP %{http_code}\n" -X PATCH \
-  "http://localhost:9090/550e8400-e29b-41d4-a716-446655440000" \
+  "http://localhost:3000/550e8400-e29b-41d4-a716-446655440000" \
   -H "Content-Type: application/json" \
   -d '{"config": {"DISPLAY_NAME": "Alice M. Workshop", "QUOTA_MB": 1000}}'
 # Expected: HTTP 204
 
 # DELETE
 curl -s -w "\nHTTP %{http_code}\n" -X DELETE \
-  "http://localhost:9090/550e8400-e29b-41d4-a716-446655440000"
+  "http://localhost:3000/550e8400-e29b-41d4-a716-446655440000"
 # Expected: HTTP 204
 ```
 
@@ -602,25 +569,21 @@ Now let's get your REST backend running on Codesphere so it's reachable by the p
 2. Create a new workspace from the `stalwart-provider` repository.
 3. Choose the **"Always On"** plan (so the reconciler can reach it 24/7).
 
-### 4.2 — Configure Environment Variables
+### 4.2 — CI Pipeline
 
-In your workspace settings, set these environment variables:
+The repo includes a pre-configured `ci.stalwart-provider.yml` that installs dependencies and starts the backend. It already has the correct Stalwart host configured and reads the admin token from the Codesphere vault. Review it — no changes should be needed for the workshop.
+
+The key environment variables are set in the CI file:
 
 | Variable | Value | Description |
 |----------|-------|-------------|
-| `STALWART_API_URL` | `https://<stalwart-host>` | Workshop Stalwart instance |
-| `STALWART_ADMIN_TOKEN` | *(provided by workshop lead)* | Admin credentials |
-| `STALWART_IMAP_HOST` | `<stalwart-host>` | Public IMAP hostname |
-| `STALWART_SMTP_HOST` | `<stalwart-host>` | Public SMTP hostname |
-| `STALWART_IMAP_PORT` | `993` | IMAPS port |
-| `STALWART_SMTP_PORT` | `587` | SMTP submission port |
+| `STALWART_API_URL` | `https://stalwart.csa.codesphere-demo.com` | Workshop Stalwart instance |
+| `STALWART_ADMIN_TOKEN` | `${{ vault['stalwart-admin-token'] }}` | Admin credentials (from vault) |
+| `STALWART_IMAP_HOST` | `stalwart.csa.codesphere-demo.com` | Public IMAP hostname |
+| `STALWART_SMTP_HOST` | `stalwart.csa.codesphere-demo.com` | Public SMTP hostname |
 | `PORT` | `3000` | Backend listen port |
 
-### 4.3 — CI Pipeline
-
-The repo includes a pre-configured `ci.stalwart-provider.yml` that installs dependencies and starts the backend. It already references the correct Stalwart host and reads the admin token from the Codesphere vault. Review it — no changes should be needed for the workshop.
-
-### 4.4 — Deploy and Verify
+### 4.3 — Deploy and Verify
 
 Deploy the workspace, then verify the backend is reachable:
 
@@ -749,13 +712,7 @@ detailsSchema:
 | `plans[].parameters` | `{}` (object, even if empty) | *(missing)* |
 | Secrets | `format: password` | Default values |
 
-### 5.4 — Validate
-
-```bash
-make validate
-```
-
-✅ **Checkpoint:** `make validate` passes with no errors.
+✅ **Checkpoint:** Your `provider.yml` follows the validation rules above.
 
 ---
 
@@ -884,12 +841,13 @@ curl -s "$STALWART_API_URL/api/principal/yourname" \
 | `502` errors in backend logs | Stalwart API URL wrong or unreachable | Verify `STALWART_API_URL` and network connectivity |
 | Domain creation fails with `notFound` | Not a bug — Stalwart returns this oddly | Ensure you're checking for `alreadyExists` in error handling |
 | JMAP details empty | User just created, JMAP session needs a moment | Add a small delay or handle gracefully in GET |
-| Provider registration returns 409 | Provider name+version already registered | Bump the version (`v2`, `v3`) or use a different name |
 | `401` from Stalwart | Wrong admin credentials | Double-check `STALWART_ADMIN_TOKEN` format (`user:password` or bearer token) |
 
 ### Ideas for Improvements
 
 Once the basic lifecycle works, consider these enhancements:
+
+**Infrastructure improvements:**
 
 | Improvement | Difficulty | Description |
 |-------------|-----------|-------------|
@@ -899,6 +857,15 @@ Once the basic lifecycle works, consider these enhancements:
 | **Health endpoint** | ⭐ | Add `GET /health` that checks Stalwart connectivity |
 | **Quota enforcement** | ⭐⭐ | Map plan IDs to actual quota values (Starter=500MB, Standard=2GB, Premium=10GB) |
 | **Multi-domain isolation** | ⭐⭐⭐ | Currently every new instance re-uses or creates a domain without ownership checks — add validation so that a service instance creator actually belongs to the organization owning a domain |
+
+**Build something on top of it:**
+
+| Idea | Difficulty | Description |
+|------|-----------|-------------|
+| **Transactional email service** | ⭐ | Build an app that provisions a mailbox and sends transactional emails via JMAP |
+| **Newsletter platform** | ⭐⭐ | Create a service that sends bulk emails using JMAP batch operations |
+| **Email webhook bridge** | ⭐⭐ | Poll JMAP for new emails and forward them to a webhook URL |
+| **Mailing list manager** | ⭐⭐⭐ | Use Stalwart's `list` principal type to manage mailing lists through the provider |
 
 ---
 
@@ -972,7 +939,26 @@ You've turned a raw open-source mail server into a **self-service managed offeri
 
 ---
 
-## Appendix B — Gotchas & Troubleshooting
+## Appendix B — Environment Variables
+
+These are the environment variables used by `server.js`. In the workshop, they are pre-configured in `ci.stalwart-provider.yml`.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `STALWART_API_URL` | Yes | — | Stalwart admin API base URL |
+| `STALWART_ADMIN_TOKEN` | Yes | — | `user:password` for Basic Auth, or a Bearer token |
+| `STALWART_IMAP_HOST` | Yes | — | Public IMAP hostname (returned in service details) |
+| `STALWART_SMTP_HOST` | Yes | — | Public SMTP hostname (returned in service details) |
+| `STALWART_IMAP_PORT` | No | `993` | IMAP port |
+| `STALWART_SMTP_PORT` | No | `587` | SMTP submission port |
+| `STALWART_MAIL_DOMAIN` | No | — | Default domain if not set per-service |
+| `STALWART_JMAP_URL` | No | `${STALWART_API_URL}/jmap` | Public JMAP endpoint |
+| `STALWART_WEBMAIL_URL` | No | `${STALWART_API_URL}/login` | Public webmail URL |
+| `PORT` | No | `8080` | Backend listen port |
+
+---
+
+## Appendix C — Gotchas & Troubleshooting
 
 ### Stalwart API Gotchas
 
@@ -993,18 +979,11 @@ You've turned a raw open-source mail server into a **self-service managed offeri
 | Missing `parameters` in plan | Validation error | Always include `parameters: {}` even if empty |
 | Version is semver | Registration fails | Use `v1`, `v2`, not `1.0.0` |
 | Name has uppercase | Registration fails | Lowercase only: `stalwart-mailbox` |
-
-### Registration Gotchas
-
-| Gotcha | What happens | Solution |
-|--------|-------------|----------|
-| 401 on registration | Auth failed | Check `CODESPHERE_API_TOKEN` is valid |
-| 409 on registration | Name+version already exists | Bump version or use different name |
-| REST backend not in catalog | POST /providers only works for landscape-based | For REST backends, check your instance's admin config |
+| Wrong backend key | Provider not reachable | Use `backend.api.endpoint` for REST backends, not `backend.rest.url` |
 
 ---
 
-## Appendix C — JMAP Email Sending
+## Appendix D — JMAP Email Sending
 
 JMAP (RFC 8620/8621) is the modern replacement for IMAP+SMTP, using JSON over HTTP. The managed service auto-discovers all the IDs you need.
 
@@ -1026,7 +1005,7 @@ A single JMAP request sends an email in two steps (both in one HTTP call):
 ### Send an Email
 
 ```bash
-curl -s "$STALWART_JMAP_URL/" \
+curl -s "$STALWART_API_URL/jmap/" \
   -u "username:password" \
   -H "Content-Type: application/json" \
   -d '{
@@ -1067,11 +1046,54 @@ curl -s "$STALWART_JMAP_URL/" \
   }'
 ```
 
-> **Note:** `#draft1` is a JMAP back-reference — it automatically resolves to the email ID created by the first method call.
+### Understanding the Request
+
+| Field | Value | Meaning |
+|-------|-------|---------|
+| `accountId` | From service details | Your JMAP account |
+| `"draft1"` | You pick this label | A temporary client-side label for this email |
+| `mailboxIds` | `{"DRAFTS_ID": true}` | Place the draft in the Drafts mailbox |
+| `identityId` | From service details | Your sender identity |
+| `emailId: "#draft1"` | Back-reference | JMAP resolves this to the email ID created by `Email/set` above |
+
+> **Note:** `#draft1` is a JMAP **creation reference**. It automatically gets replaced with the actual email ID from the `Email/set` response. This is how the two steps are linked in a single request.
 
 ### Verify Success
 
-If the response contains `"created"` in both method responses, the email was sent successfully. If something went wrong, look for `"notCreated"` in the response.
+If the response contains `"created"` in both method responses, the email was sent successfully. If you see `"notCreated"` instead, something went wrong.
+
+You can also verify by querying the Sent mailbox:
+
+```bash
+curl -s "$STALWART_API_URL/jmap/" \
+  -u "username:password" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "using": ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail"],
+    "methodCalls": [
+      ["Email/query", {
+        "accountId": "ACCOUNT_ID",
+        "filter": {"subject": "Hello!"},
+        "sort": [{"property": "receivedAt", "isAscending": false}],
+        "limit": 5
+      }, "q1"],
+      ["Email/get", {
+        "accountId": "ACCOUNT_ID",
+        "#ids": {"resultOf": "q1", "name": "Email/query", "path": "/ids"},
+        "properties": ["subject", "from", "to", "sentAt", "preview"]
+      }, "g1"]
+    ]
+  }' | python3 -m json.tool
+```
+
+### JMAP Error Cases
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `401 Unauthorized` | Wrong username or password | Check `-u 'user:password'` |
+| `"notCreated"` in Email/set | Invalid mailbox ID or account ID | Verify IDs from service details |
+| `"notCreated"` in EmailSubmission/set | Invalid identity ID | Verify `identityId` from service details |
+| Email created but not in Sent | Submission failed silently | Check for errors in the `EmailSubmission/set` response |
 
 ---
 

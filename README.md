@@ -7,39 +7,30 @@ A Codesphere managed service provider that wraps [Stalwart Mail Server](https://
 A single shared Stalwart instance hosts many mail accounts. When a user books the service through Codesphere, the REST backend creates a new mail account ("logical tenant") on that shared server. When they delete the service, the account is removed.
 
 ```
-Codesphere Platform  ◄──► REST Backend (this repo)  ──► Stalwart Mail Server
-  (reconcile loop)         POST/GET/PATCH/DELETE          (shared instance)
+Codesphere Platform  <-->  REST Backend (this repo)  -->  Stalwart Mail Server
+  (reconcile loop)         POST/GET/PATCH/DELETE           (shared instance)
 ```
 
 ## Repository Structure
 
 ```
-├── src/                        # REST backend (Node.js/Express)
-│   ├── server.js               # Managed service adapter implementation
-│   └── package.json
-├── ci.stalwart-provider.yml    # CI pipeline for the REST backend
-├── ci.stalwart.yml             # CI pipeline for the Stalwart Mail Server
-├── provider.yml                # Marketplace service definition
-├── docker-compose.local.yml    # Local Stalwart for development
-├── examples/                   # Generic provider.yml / ci.yml examples
-├── Makefile                    # validate, test, start-api-backend, send-mail
-└── WORKSHOP_TUTORIAL.md        # Step-by-step workshop guide
+├── server.js                       # REST backend (Node.js/Express)
+├── package.json
+├── ci.stalwart.yml                 # CI pipeline for the Stalwart Mail Server
+├── ci.stalwart-provider.yml        # CI pipeline for the REST provider backend
+├── provider.yml                    # Marketplace service definition
+├── docker-compose.local.yml        # Local Stalwart for development (optional)
+└── guides/
+    └── TUTORIAL_WORKSHOP.md        # Step-by-step workshop guide
 ```
 
 ## Quick Start
 
-```bash
-# Local development with Docker
-docker compose -f docker-compose.local.yml up -d
-make start-api-backend
-
-# Validate provider.yml
-make validate
-
-# Send a test email via JMAP
-make send-mail JMAP_TO_EMAIL=someone@example.com
-```
+1. Create a Codesphere workspace from this repository
+2. The `ci.stalwart-provider.yml` pipeline handles install and startup automatically
+3. Link the custom domain `ms-provider-stalwart.csa.codesphere-demo.com` to your workspace
+4. Book a "Stalwart Mailbox" service through the Codesphere marketplace
 
 ## Workshop
 
-See [./guides/WORKSHOP_TUTORIAL.md](./guides/WORKSHOP_TUTORIAL.md) for the full hands-on guide.
+See [guides/TUTORIAL_WORKSHOP.md](guides/TUTORIAL_WORKSHOP.md) for the full hands-on guide.
