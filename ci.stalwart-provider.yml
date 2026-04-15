@@ -12,7 +12,9 @@ run:
       ports:
         - port: 3000
           isPublic: false
-      paths: []
+      paths:
+        - port: 3000
+          path: /
     env:
       STALWART_API_URL: https://stalwart.csa.codesphere-demo.com
       STALWART_ADMIN_TOKEN: ${{ vault['stalwart-admin-token'] }}
