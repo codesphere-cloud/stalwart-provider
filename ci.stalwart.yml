@@ -32,7 +32,4 @@ run:
       - name: _workspace
         mountPath: /opt/stalwart-mail
         workspacePath: stalwart-data
-    steps:
-      - command: whoami
-      - command: /bin/sh /usr/local/bin/entrypoint.sh
     image: stalwartlabs/stalwart:v0.13.2
